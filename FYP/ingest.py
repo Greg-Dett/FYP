@@ -14,7 +14,7 @@ VALUES (
   ST_3DMakeBox(
     ST_MakePoint(%s, %s, %s),
     ST_MakePoint(%s, %s, %s)
-  )::box3d,
+  )::geometry,
   %s
 )
 ON CONFLICT (file_path) DO UPDATE SET

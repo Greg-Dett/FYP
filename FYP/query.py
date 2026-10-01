@@ -1,42 +1,62 @@
 from database import GetAll
 
+
 QUERY_SQL = """
 SELECT id, file_name, file_path, srid
 FROM copc_files
 WHERE bounds &&& ST_3DMakeBox(
   ST_MakePoint(%s, %s, %s),
   ST_MakePoint(%s, %s, %s)
-)::box3d
+)::geometry
 ORDER BY id;
 """
 
 UNION_BOUNDS_SQL = """
+WITH selected AS (
+  SELECT file_name, bounds
+  FROM copc_files
+  WHERE file_name = ANY(%s)
+),
+extent AS (
+  SELECT ST_3DExtent(bounds) AS ext FROM selected
+)
 SELECT
-  ST_XMin(ST_3DExtent(bounds::geometry)::geometry) AS xmin,
-  ST_YMin(ST_3DExtent(bounds::geometry)::geometry) AS ymin,
-  ST_ZMin(ST_3DExtent(bounds::geometry)::geometry) AS zmin,
-  ST_XMax(ST_3DExtent(bounds::geometry)::geometry) AS xmax,
-  ST_YMax(ST_3DExtent(bounds::geometry)::geometry) AS ymax,
-  ST_ZMax(ST_3DExtent(bounds::geometry)::geometry) AS zmax
-FROM copc_files
-WHERE file_name = ANY(%s);
+  ST_XMin(ext) AS xmin,
+  ST_YMin(ext) AS ymin,
+  ST_ZMin(ext) AS zmin,
+  ST_XMax(ext) AS xmax,
+  ST_YMax(ext) AS ymax,
+  ST_ZMax(ext) AS zmax,
+  (SELECT array_agg(file_name) FROM selected) AS found_names
+FROM extent;
 """
 
 def query3dBox(xmin, ymin, zmin,xmax, ymax, zmax):
     return GetAll(QUERY_SQL, (xmin, ymin, zmin, xmax, ymax, zmax))
 
-def queryMultipleFiles(fileNames): #takes file names, merges their bounds, returns all files that overlap the merged area
+def queryMultipleFiles(fileNames):
     rows = GetAll(UNION_BOUNDS_SQL, (fileNames,))
-    if not rows or rows[0]["xmin"] is None: #none means no matching files found in db
+ 
+    # No matching rows: the extent and found names come back as NULL
+    if not rows or rows[0]["xmin"] is None:
         raise ValueError(f"No files found matching names: {fileNames}")
-
+ 
     b = rows[0]
+ 
+    # Report any requested names that aren't in the database
+    found = set(b["found_names"] or [])
+    missing = sorted(set(fileNames) - found)
+    if missing:
+        raise ValueError(f"Files not found: {missing}")
+ 
     xmin, ymin, zmin = float(b["xmin"]), float(b["ymin"]), float(b["zmin"])
     xmax, ymax, zmax = float(b["xmax"]), float(b["ymax"]), float(b["zmax"])
-
-    matches = query3dBox(xmin, ymin, zmin, xmax, ymax, zmax) #reuse existing query with the merged bounds
+ 
+    # Reuse the indexed box query with the merged bounds
+    matches = query3dBox(xmin, ymin, zmin, xmax, ymax, zmax)
+ 
     return {
-         "union_bounds": { #return the merged bounds so caller knows what area was searched
+        "union_bounds": {
             "xmin": xmin, "ymin": ymin, "zmin": zmin,
             "xmax": xmax, "ymax": ymax, "zmax": zmax,
         },

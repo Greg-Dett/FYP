@@ -2,8 +2,15 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-
 from config import settings
+import pdal
+
+def isRemote(path):
+    return str(path).startswith(("http://", "https://"))
+
+def toPdalPath(path):
+    # URLs must be passed through unchanged; only local paths get resolved
+    return str(path) if isRemote(path) else str(Path(path).resolve())
 
 
 def runCommand(cmd):
@@ -43,34 +50,26 @@ def getBounds(metaData):
 
 #gets actual point data from files
 def readPoints(file, xmin, ymin, zmin, xmax, ymax, zmax, limit=None):
-
-    bounds = f"([{xmin},{xmax}],[{ymin},{ymax}],[{zmin},{zmax}])"
-
-    stages= [
-        {
+    stages = [{
         "type": "readers.copc",
-        "filename": str(Path(file).resolve()),
-        "bounds": bounds,
-        }
-    ]
-    #limit to not crash by retrieving all points as files can be massive
+        "filename": toPdalPath(file),  # fixes remote URLs being mangled by Path().resolve()
+        "bounds": f"([{xmin},{xmax}],[{ymin},{ymax}],[{zmin},{zmax}])",
+    }]
     if limit is not None:
-        stages.append({"type": "filters.head", "count": limit})
-    #temp file for pdal pipeline usage
-    with tempfile.TemporaryDirectory() as tmpdir:
-        out_path = Path(tmpdir) / "out.geojson"
-        stages.append({
-        "type": "writers.text",
-        "format": "geojson",
-        "filename": str(out_path),
-        })
+        stages.append({"type": "filters.head", "count": limit})  # cap points so huge files don't flood the response
 
-        pipePath = Path(tmpdir) / "pipeline.json"
-        pipePath.write_text(json.dumps({"pipeline": stages}), encoding="utf-8")
+    # run the pipeline in memory: no temp files, no separate PDAL process
+    pipeline = pdal.Pipeline(json.dumps({"pipeline": stages}))
+    pipeline.execute()
 
-        runCommand([settings.PDAL_BIN, "pipeline", str(pipePath)])
+    if not pipeline.arrays:
+        return []
+    pts = pipeline.arrays[0]  # NumPy structured array with X, Y, Z columns
 
-        return json.loads(out_path.read_text(encoding="utf-8"))
+    return [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [x, y, z]}}
+        for x, y, z in zip(pts["X"].tolist(), pts["Y"].tolist(), pts["Z"].tolist())
+    ]
     
 def getPointCount(metaData): #gets number of points from Metadata
     md = metaData.get("metadata", {})

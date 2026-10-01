@@ -6,6 +6,7 @@ from database import runSqlFile
 from ingest import getAndConvert, getRemoteCopc
 from query import query3dBox, queryMultipleFiles
 from pda import readPoints
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
 CORS(app)
@@ -43,7 +44,12 @@ def upload():
 
     return "uploaded"
 
+MAX_WORKERS = 8  # how many files are read at the same time
 
+def splitLimit(limit, n):
+    # share the limit across n files: every file gets at least 1, remainder spread out
+    base, extra = divmod(limit, n)
+    return [max(1, base + (1 if i < extra else 0)) for i in range(n)]
 
 
 def parseBox():
@@ -71,27 +77,36 @@ def query():
 def getPoints():
     try:
         xmin, ymin, zmin, xmax, ymax, zmax = parseBox()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        limit = int(request.args.get("limit", 1000))  # default 1000 to avoid returning millions of points
+        if limit <= 0:
+            raise ValueError
     except ValueError:
-        return "Co-ordinate error"
+        return jsonify({"error": "limit must be a positive integer"}), 400
 
-    pointLimit = request.args.get("limit")
-    if (pointLimit):
-         limit = int(pointLimit) 
-    else: limit =1000 #default to 1000 to stop too much data coming through, possibility of millions of points
-
-    files = query3dBox(xmin, ymin, zmin, xmax, ymax, zmax) #get files whose bounds overlap the query box
+    files = query3dBox(xmin, ymin, zmin, xmax, ymax, zmax)  # files whose bounds overlap the box
     if not files:
-        return "No files found"
-    #creating points and errors lists to prevent total failure from single point retrieval failure
+        return jsonify({"Points": [], "point_count": 0, "file_count": 0})
+
+    limits = splitLimit(limit, len(files))
     points = []
     errors = []
-    per_file_limit = limit // len(files) #spread limit evenly across files so points come from each
-    for row in files:
-        try:
-            geojson = readPoints(row["file_path"], xmin, ymin, zmin, xmax, ymax, zmax, limit=per_file_limit)
-            points.extend(geojson.get("features", []))
-        except Exception as e:
-            errors.append({"file": row["file_name"], "error": str(e)}) #store error but continue with other files
+
+    # read all overlapping files at the same time instead of one after another
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(files))) as pool:
+        futures = {
+            pool.submit(readPoints, row["file_path"], xmin, ymin, zmin, xmax, ymax, zmax, limits[i]): row
+            for i, row in enumerate(files)
+        }
+        for future in as_completed(futures):  # handle each file as soon as it finishes
+            row = futures[future]
+            try:
+                points.extend(future.result())
+            except Exception as e:
+                errors.append({"file": row["file_name"], "error": str(e)})  # one bad file doesn't fail the request
 
     result = {
         "Points": points,
@@ -101,7 +116,6 @@ def getPoints():
     if errors:
         result["errors"] = errors
     return jsonify(result)
-
 
 #registers a remote copc file by url, pdal reads metadata via http range requests so no download needed
 @app.post("/registerRemote")
