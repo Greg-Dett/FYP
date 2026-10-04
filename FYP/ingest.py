@@ -55,7 +55,8 @@ def getRemoteCopc(url: str, srid: int): #fetches metadata from remote copc file 
     )
 
 def getAndConvert(inputs: list[str], srid: int = 29902): #converts las/laz to copc and ingests, or ingests copc directly
-    out_dir = Path(r"C:\Users\Greg\FYP\copc_files")
+    out_dir = Path(settings.STORAGE_DIR) / "copc_files"
+    out_dir.mkdir(parents=True, exist_ok=True)
     ingested = []
 
     for in_path in inputs:
@@ -63,7 +64,7 @@ def getAndConvert(inputs: list[str], srid: int = 29902): #converts las/laz to co
         if not p.exists():
             raise FileNotFoundError(str(p))
 
-        if p.suffix.lower() in [".copc"]: #already copc so ingest directly
+        if p.name.lower().endswith((".copc", ".copc.laz")):  #already COPC, ingest directly
             getCopc(str(p), srid=srid)
             ingested.append(str(p.resolve()))
             continue

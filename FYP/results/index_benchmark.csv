@@ -1,0 +1,5 @@
+tiles,seq_scan_ms,gist_ms,speedup,matches,index_build_ms,plan_without_index,plan_with_index
+1000,0.068,0.01,6.8,0,5.9,Seq Scan,Index Scan
+10000,0.634,0.015,42.3,4,16.4,Seq Scan,Index Scan
+100000,6.829,0.051,133.9,73,273.7,Seq Scan,"Bitmap Heap Scan, Bitmap Index Scan"
+1000000,59.49,0.429,138.7,787,2932.0,Seq Scan,"Bitmap Heap Scan, Bitmap Index Scan"

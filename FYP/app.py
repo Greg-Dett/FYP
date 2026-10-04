@@ -7,6 +7,9 @@ from ingest import getAndConvert, getRemoteCopc
 from query import query3dBox, queryMultipleFiles
 from pda import readPoints
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from werkzeug.utils import secure_filename
+from config import settings
 
 app = Flask(__name__)
 CORS(app)
@@ -30,19 +33,30 @@ def getFloat(name):
 # uploads file to the db
 @app.post("/upload")
 def upload():
-    srid = int(request.form.get("srid")) #going to be 29902 for our dataset however have not kept it as that for adaptability
-    f = request.files["file"]
-    storage = r"C:\Users\Greg\FYP\las_files"
-    path = storage + "\\" + f.filename
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"error": "missing file"}), 400
+
+    filename = secure_filename(f.filename)  # strips things like ../ so files can't be written outside the folder
+    if not filename:
+        return jsonify({"error": "invalid filename"}), 400
 
     try:
-        f.save(str(path))
+        srid = int(request.form.get("srid", 29902))  # defaults to Irish Grid
+    except ValueError:
+        return jsonify({"error": "srid must be an integer"}), 400
+
+    upload_dir = Path(settings.STORAGE_DIR) / "las_files"
+    upload_dir.mkdir(parents=True, exist_ok=True)  # create the folder if it doesn't exist
+    path = upload_dir / filename
+
+    try:
+        f.save(path)
         ingested = getAndConvert([str(path)], srid=srid)
     except Exception as e:
-        print(str(e))
-        return str(e), 500
+        return jsonify({"error": str(e)}), 500
 
-    return "uploaded"
+    return jsonify({"ingested": ingested})
 
 MAX_WORKERS = 8  # how many files are read at the same time
 

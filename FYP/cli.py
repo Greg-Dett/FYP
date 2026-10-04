@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import sys
-
 import requests
 
 
@@ -24,7 +23,7 @@ def upload(args):
 
     # 'with' makes sure the file is closed after the upload
     with open(args.file, "rb") as fh:
-        r = requests.post(url, files={"file": fh}, data=data, timeout=120)
+        r = requests.post(url, files={"file": fh}, data=data, timeout=1800)
 
     if r.status_code >= 400:
         printError(f"upload failed ({r.status_code}): {r.text}")

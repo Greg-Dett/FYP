@@ -2,7 +2,7 @@ import time
 import statistics
 import requests
 
-BASE = "http://localhost:5000"
+BASE = "http://127.0.0.1:5000"
 RUNS = 5 #number of runs per query to get median
 
 #5 queries of increasing bounding box size, centred on the dataset
