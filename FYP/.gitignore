@@ -4,4 +4,4 @@ data/
 *.copc
 .env
 __pycache__/
-enviornment.yml
+environment.yml
