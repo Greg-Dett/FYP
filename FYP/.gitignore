@@ -1,0 +1,7 @@
+data/
+*.laz
+*.las
+*.copc
+.env
+__pycache__/
+.yml
