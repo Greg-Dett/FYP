@@ -74,14 +74,6 @@ def parseBox():
         raise ValueError("Invalid bounds ordering")
     return xmin, ymin, zmin, xmax, ymax, zmax
 
-@app.get("/query")
-def query():
-    try:
-        xmin, ymin, zmin, xmax, ymax, zmax = parseBox()
-    except ValueError:
-        return "Co-ordinate error"
-    rows = query3dBox(xmin, ymin, zmin, xmax, ymax, zmax)
-    return jsonify({"matches": rows})
 
 @app.get("/points")
 def getPoints():

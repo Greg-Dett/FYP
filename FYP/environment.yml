@@ -1,0 +1,13 @@
+name: copc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pdal
+  - python-pdal
+  - numpy
+  - flask
+  - flask-cors
+  - psycopg2
+  - python-dotenv
+  - requests
