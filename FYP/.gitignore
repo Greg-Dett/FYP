@@ -4,3 +4,7 @@ data/
 *.copc
 .env
 __pycache__/
+las_files/
+.terraform/
+*.tfstate
+*.tfstate.*
