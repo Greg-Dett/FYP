@@ -1,0 +1,34 @@
+# Local test of the containerised API against PostGIS:  docker compose up --build
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: copc_db
+    ports:
+      - "5433:5432"   # same host port as config.py expects, so running the API outside Docker still works
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d copc_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/copc_db
+      STORAGE_DIR: /app/data
+    ports:
+      - "5000:5000"
+    volumes:
+      - copcdata:/app/data   # uploaded and converted files survive container restarts
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  copcdata:

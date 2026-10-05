@@ -1,0 +1,13 @@
+# Keep secrets, git history and point cloud data out of the image
+.env
+.git
+.gitignore
+.github/
+data/
+results/
+terraform/
+__pycache__/
+results/
+las_files/
+docker-compose.yml
+Dockerfile
