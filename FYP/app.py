@@ -60,10 +60,6 @@ def upload():
 
 MAX_WORKERS = 8  # how many files are read at the same time
 
-def splitLimit(limit, n):
-    # share the limit across n files: every file gets at least 1, remainder spread out
-    base, extra = divmod(limit, n)
-    return [max(1, base + (1 if i < extra else 0)) for i in range(n)]
 
 
 def parseBox():
@@ -105,22 +101,29 @@ def getPoints():
     if not files:
         return jsonify({"Points": [], "point_count": 0, "file_count": 0})
 
-    limits = splitLimit(limit, len(files))
-    points = []
     errors = []
+    results = []
 
-    # read all overlapping files at the same time instead of one after another
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(files))) as pool:
         futures = {
-            pool.submit(readPoints, row["file_path"], xmin, ymin, zmin, xmax, ymax, zmax, limits[i]): row
-            for i, row in enumerate(files)
+            pool.submit(readPoints, row["file_path"], xmin, ymin, zmin, xmax, ymax, zmax, limit): row
+            for row in files
         }
-        for future in as_completed(futures):  # handle each file as soon as it finishes
+        for future in as_completed(futures):
             row = futures[future]
             try:
-                points.extend(future.result())
+                results.append(future.result())
             except Exception as e:
-                errors.append({"file": row["file_name"], "error": str(e)})  # one bad file doesn't fail the request
+                errors.append({"file": row["file_name"], "error": str(e)})
+
+    # take points from each file in turn, so every file contributes fairly up to the limit
+    points = []
+    i = 0
+    while len(points) < limit and any(i < len(r) for r in results):
+        for r in results:
+            if i < len(r) and len(points) < limit:
+                points.append(r[i])
+        i += 1
 
     result = {
         "Points": points,
@@ -149,23 +152,14 @@ def register_remote():
 
 
 #takes a list of file names, computes their combined bbox and returns all files that overlap it
-@app.post("/queryMany")
-def query_between():
-
-    body = request.get_json(silent=True) or {}
-    file_names = body.get("files", [])
-
-    if not isinstance(file_names, list) or len(file_names) < 2:
-        return "Provide at least 2 file names in 'files'"
-
+@app.get("/query")
+def query():
     try:
-        result = queryMultipleFiles(file_names)
+        xmin, ymin, zmin, xmax, ymax, zmax = parseBox()
     except ValueError as e:
-        return str(e), 400
-    except Exception as e:
-        return str(e), 500
-
-    return jsonify(result)
+        return jsonify({"error": str(e)}), 400  # bad or missing coordinates
+    rows = query3dBox(xmin, ymin, zmin, xmax, ymax, zmax)
+    return jsonify({"matches": rows})
 
 
 if __name__ == "__main__":

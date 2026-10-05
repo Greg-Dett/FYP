@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 from config import settings
 import pdal
+import os
 
 def isRemote(path):
     return str(path).startswith(("http://", "https://"))
@@ -15,22 +16,21 @@ def toPdalPath(path):
 
 def runCommand(cmd):
     proc = subprocess.run(cmd, capture_output=True, text=True)
-    print(proc.stderr)
+    if proc.returncode != 0:  # PDAL failed: stop here with its real error message
+        raise RuntimeError(f"PDAL failed ({proc.returncode}): {proc.stderr.strip()}")
     return proc.stdout
 
 
-
-    
-def lasToCopc(inPath, outPath): #conversion from las to copc 
-    if not Path(outPath).parent.exists():
-        Path(outPath).parent.mkdir() #creates out path if not available
-    #creating pdal pipeline
+def lasToCopc(inPath, outPath):  # conversion from LAS/LAZ to COPC
+    Path(outPath).parent.mkdir(parents=True, exist_ok=True)
     pipeline = {"pipeline": [str(inPath), {"type": "writers.copc", "filename": str(outPath)}]}
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f: #temporary file for pdal pipeline as JSON cannot be passed to PDAL
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(pipeline, f)
-        pipePath = f.name  #temp file path 
-    proc = subprocess.run([settings.PDAL_BIN, "pipeline", pipePath], capture_output=True, text=True)
-    print(proc.stderr)
+        pipePath = f.name
+    try:
+        runCommand([settings.PDAL_BIN, "pipeline", pipePath])
+    finally:
+        os.remove(pipePath)  # always delete the temp pipeline file, even if PDAL fails
 
 def copcMetadata(path): #gets metadata from file
     stdout = runCommand([settings.PDAL_BIN, "info", "--metadata", path])
